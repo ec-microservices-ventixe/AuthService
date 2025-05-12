@@ -53,7 +53,7 @@ public class AuthController(TokenService tokenService, UserManager<IdentityUser>
             if(user is null) return StatusCode(500, "Something went wrong");
 
             var roles = await _userManager.GetRolesAsync(user);
-            var token = _tokenService.GenerateToken(user.Id, form.Email, roles[0]);
+            var token = _tokenService.GenerateRsaToken(user.Id, form.Email, roles[0]);
             Response.Headers.Append("Bearer-Token", token);
             return Ok("You Signed in successfully");
         }
