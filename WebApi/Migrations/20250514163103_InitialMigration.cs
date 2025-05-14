@@ -53,6 +53,19 @@ namespace WebApi.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "RefreshTokensFamilies",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    IsLocked = table.Column<bool>(type: "bit", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RefreshTokensFamilies", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "AspNetRoleClaims",
                 columns: table => new
                 {
@@ -69,28 +82,6 @@ namespace WebApi.Migrations
                         name: "FK_AspNetRoleClaims_AspNetRoles_RoleId",
                         column: x => x.RoleId,
                         principalTable: "AspNetRoles",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "AppUsersRefreshTokens",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    Token = table.Column<string>(type: "varchar(1000)", nullable: false),
-                    Created = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    Expires = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    UserId = table.Column<string>(type: "nvarchar(450)", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_AppUsersRefreshTokens", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_AppUsersRefreshTokens_AspNetUsers_UserId",
-                        column: x => x.UserId,
-                        principalTable: "AspNetUsers",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -180,6 +171,35 @@ namespace WebApi.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            migrationBuilder.CreateTable(
+                name: "AppUsersRefreshTokens",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Token = table.Column<string>(type: "varchar(1000)", nullable: false),
+                    Created = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    Expires = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UserId = table.Column<string>(type: "nvarchar(450)", nullable: false),
+                    RefreshTokenFamilyId = table.Column<int>(type: "int", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_AppUsersRefreshTokens", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_AppUsersRefreshTokens_AspNetUsers_UserId",
+                        column: x => x.UserId,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_AppUsersRefreshTokens_RefreshTokensFamilies_RefreshTokenFamilyId",
+                        column: x => x.RefreshTokenFamilyId,
+                        principalTable: "RefreshTokensFamilies",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
             migrationBuilder.InsertData(
                 table: "AspNetRoles",
                 columns: new[] { "Id", "ConcurrencyStamp", "Name", "NormalizedName" },
@@ -188,6 +208,17 @@ namespace WebApi.Migrations
                     { "11111111-1111-1111-1111-111111111111", null, "Admin", "ADMIN" },
                     { "22222222-2222-2222-2222-222222222222", null, "User", "USER" }
                 });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AppUsersRefreshTokens_RefreshTokenFamilyId",
+                table: "AppUsersRefreshTokens",
+                column: "RefreshTokenFamilyId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AppUsersRefreshTokens_Token",
+                table: "AppUsersRefreshTokens",
+                column: "Token",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_AppUsersRefreshTokens_UserId",
@@ -254,6 +285,9 @@ namespace WebApi.Migrations
 
             migrationBuilder.DropTable(
                 name: "AspNetUserTokens");
+
+            migrationBuilder.DropTable(
+                name: "RefreshTokensFamilies");
 
             migrationBuilder.DropTable(
                 name: "AspNetRoles");

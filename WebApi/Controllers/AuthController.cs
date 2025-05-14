@@ -1,9 +1,7 @@
-﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Diagnostics;
-using System.Security.Claims;
 using WebApi.Data.Context;
 using WebApi.Data.Entities;
 using WebApi.Models;
@@ -13,10 +11,10 @@ namespace WebApi.Controllers;
 
 [ApiController]
 [Route("[controller]")]
-public class AuthController(ApplicationDbContext context, TokenService tokenService, UserManager<AppUserEntitiy> userManager) : ControllerBase
+public class AuthController(ApplicationDbContext context, TokenService tokenService, UserManager<AppUserEntity> userManager) : ControllerBase
 {
     private readonly TokenService _tokenService = tokenService;
-    private readonly UserManager<AppUserEntitiy> _userManager = userManager;
+    private readonly UserManager<AppUserEntity> _userManager = userManager;
     private readonly ApplicationDbContext _context = context;
 
     [HttpPost("/SignUp")]
@@ -29,7 +27,7 @@ public class AuthController(ApplicationDbContext context, TokenService tokenServ
             if (existingUser != null)
                 return Conflict("Email already exists");
 
-            var user = new AppUserEntitiy { Email = form.Email, UserName = form.Email};
+            var user = new AppUserEntity { Email = form.Email, UserName = form.Email};
 
             var result = await _userManager.CreateAsync(user, form.Password);
             var thisIsTheFirstUser = _userManager.Users.Count() == 1;
@@ -59,7 +57,12 @@ public class AuthController(ApplicationDbContext context, TokenService tokenServ
 
             var roles = await _userManager.GetRolesAsync(user);
             var token = _tokenService.GenerateRsaToken(user.Id, form.Email, roles[0]);
-            var refreshToken = _tokenService.GenerateRefreshToken();
+
+            var refreshTokenFamily = new RefreshTokenFamilyEntity();
+            _context.RefreshTokensFamilies.Add(refreshTokenFamily);
+            await _context.SaveChangesAsync();
+
+            var refreshToken = _tokenService.GenerateRefreshToken(refreshTokenFamily.Id);
             bool setRefreshToken = await SetRefreshToken(refreshToken, user.Id);
             Response.Headers.Append("Bearer-Token", token);
             return Ok("You Signed in successfully");
@@ -71,24 +74,22 @@ public class AuthController(ApplicationDbContext context, TokenService tokenServ
         }
     }
 
-    [Authorize]
-    [HttpPost("/SignOut")]
-    public new IActionResult SignOut()
+    [HttpPost("/signout")]
+    public async Task<IActionResult> Logout()
     {
-        try
-        {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId))
-                return Unauthorized("Invalid user");
-            RemoveAllUsersRefreshToken(userId);
+        var refreshToken = Request.Cookies["refreshToken"];
+        if (string.IsNullOrEmpty(refreshToken))
+            return Ok("Already logged out");
 
-            return Ok(new { message = "Signed out successfully" });
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine(ex.Message);
-            return StatusCode(500, "Sign out failed");
-        }
+        var tokenEntity = await _context.AppUsersRefreshTokens
+            .Include(t => t.RefreshTokenFamily)
+            .FirstOrDefaultAsync(t => t.Token == refreshToken);
+
+        if (tokenEntity is not null)
+            await LockRefreshTokenFamily(tokenEntity.RefreshTokenFamily);
+
+        Response.Cookies.Delete("refreshToken");
+        return Ok("Logged out");
     }
 
     [HttpPost("/refreshToken")]
@@ -98,54 +99,103 @@ public class AuthController(ApplicationDbContext context, TokenService tokenServ
         if (string.IsNullOrEmpty(refreshToken))
             return Unauthorized("Refresh token is missing.");
 
-        var foundToken = await _context.AppUsersRefreshTokens
-            .Include(rt => rt.User)
-            .FirstOrDefaultAsync(rt => rt.Token == refreshToken);
+        var validTokenFromDb = await ValidateRefreshToken(refreshToken);
 
-        if (foundToken == null || foundToken.Expires < DateTime.UtcNow)
-            return Unauthorized("Refresh token is invalid or expired.");
+        if (validTokenFromDb is null)
+            return Unauthorized("Refresh token is not valid or locked");
 
-        var user = _userManager.Users.FirstOrDefault(x => x.Id == foundToken.UserId);
+        var newRefreshToken = _tokenService.GenerateRefreshToken(validTokenFromDb.RefreshTokenFamilyId);
+
+        var user = await _userManager.FindByIdAsync(validTokenFromDb.UserId);
         if (user is null) return StatusCode(500, "Something went wrong");
         var roles = await _userManager.GetRolesAsync(user);
 
-        _context.AppUsersRefreshTokens.Remove(foundToken);
-
         var token = _tokenService.GenerateRsaToken(user.Id, user.Email, roles[0]);
-        var newRefreshToken = _tokenService.GenerateRefreshToken();
+
         bool setRefreshToken = await SetRefreshToken(newRefreshToken, user.Id);
         Response.Headers.Append("Bearer-Token", token);
+
         return Ok("Token refreshed successfully");
     }
 
+    private async Task<AppUserRefreshTokenEntity?> ValidateRefreshToken(string tokenFromClient)
+    {
+        try
+        {
+            var foundToken = await _context.AppUsersRefreshTokens
+            .Include(rt => rt.User)
+            .Include(rt => rt.RefreshTokenFamily)
+            .FirstOrDefaultAsync(rt => rt.Token == tokenFromClient);
+
+            if (foundToken == null || foundToken.Expires < DateTime.UtcNow || foundToken.IsLocked)
+                return null;
+
+            if (foundToken.HasRotated)
+            {
+                await LockRefreshTokenFamily(foundToken.RefreshTokenFamily);
+                return null;
+            }
+
+            foundToken.HasRotated = true;
+            await _context.SaveChangesAsync();
+
+            return foundToken;
+        } catch (Exception ex)
+        {
+            Debug.WriteLine(ex.Message);    
+            return null;
+        }
+        
+    }
 
     private async Task<bool> SetRefreshToken(RefreshToken newRefreshToken, string userId)
     {
         try
         {
-            var refreshToken = new AppUserRefreshTokenEntity { Token = newRefreshToken.Token, Created = newRefreshToken.Created, Expires = newRefreshToken.Expires, UserId = userId };
+            var refreshToken = new AppUserRefreshTokenEntity 
+            { 
+                Token = newRefreshToken.Token, 
+                Created = newRefreshToken.Created, 
+                Expires = newRefreshToken.Expires, 
+                UserId = userId,
+                RefreshTokenFamilyId = newRefreshToken.RefreshTokenFamilyId};
             _context.AppUsersRefreshTokens.Add(refreshToken);
             await _context.SaveChangesAsync();
+
             var cookieOptions = new CookieOptions
             {
                 HttpOnly = true,
+                Secure = true, 
+                SameSite = SameSiteMode.None,
                 Expires = newRefreshToken.Expires
             };
             Response.Cookies.Append("refreshToken", newRefreshToken.Token, cookieOptions);
             return true;
         }
-        catch (Exception ex) 
+        catch (Exception ex)
         {
             Debug.WriteLine(ex.Message);
             return false;
         }
     }
-
-    private void RemoveAllUsersRefreshToken(string userId)
+    private async Task LockRefreshTokenFamily(RefreshTokenFamilyEntity family)
     {
-        var tokens = _context.AppUsersRefreshTokens.Where(x => x.UserId == userId);
-        foreach (var token in tokens)
-            _context.AppUsersRefreshTokens.Remove(token);
-        _context.SaveChanges();
+        try
+        {
+            family.IsLocked = true;
+            var refreshTokens = await _context.AppUsersRefreshTokens
+            .Where(t => t.RefreshTokenFamilyId == family.Id)
+            .ToListAsync();
+
+            foreach (var token in refreshTokens)
+            {
+                token.IsLocked = true;
+            }
+            await _context.SaveChangesAsync();
+        }          
+        catch (Exception ex) 
+        {
+            Debug.WriteLine(ex.Message);
+        }
     }
 }

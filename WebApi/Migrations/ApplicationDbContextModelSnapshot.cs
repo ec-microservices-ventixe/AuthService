@@ -169,7 +169,7 @@ namespace WebApi.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
-            modelBuilder.Entity("WebApi.Data.Entities.AppUserEntitiy", b =>
+            modelBuilder.Entity("WebApi.Data.Entities.AppUserEntity", b =>
                 {
                     b.Property<string>("Id")
                         .HasColumnType("nvarchar(450)");
@@ -248,6 +248,9 @@ namespace WebApi.Migrations
                     b.Property<DateTime>("Expires")
                         .HasColumnType("datetime2");
 
+                    b.Property<int>("RefreshTokenFamilyId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Token")
                         .IsRequired()
                         .HasColumnType("varchar(1000)");
@@ -258,9 +261,30 @@ namespace WebApi.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("RefreshTokenFamilyId");
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
                     b.HasIndex("UserId");
 
                     b.ToTable("AppUsersRefreshTokens");
+                });
+
+            modelBuilder.Entity("WebApi.Data.Entities.RefreshTokenFamilyEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("IsLocked")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("RefreshTokensFamilies");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -274,7 +298,7 @@ namespace WebApi.Migrations
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserClaim<string>", b =>
                 {
-                    b.HasOne("WebApi.Data.Entities.AppUserEntitiy", null)
+                    b.HasOne("WebApi.Data.Entities.AppUserEntity", null)
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -283,7 +307,7 @@ namespace WebApi.Migrations
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserLogin<string>", b =>
                 {
-                    b.HasOne("WebApi.Data.Entities.AppUserEntitiy", null)
+                    b.HasOne("WebApi.Data.Entities.AppUserEntity", null)
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -298,7 +322,7 @@ namespace WebApi.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("WebApi.Data.Entities.AppUserEntitiy", null)
+                    b.HasOne("WebApi.Data.Entities.AppUserEntity", null)
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -307,7 +331,7 @@ namespace WebApi.Migrations
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserToken<string>", b =>
                 {
-                    b.HasOne("WebApi.Data.Entities.AppUserEntitiy", null)
+                    b.HasOne("WebApi.Data.Entities.AppUserEntity", null)
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -316,18 +340,31 @@ namespace WebApi.Migrations
 
             modelBuilder.Entity("WebApi.Data.Entities.AppUserRefreshTokenEntity", b =>
                 {
-                    b.HasOne("WebApi.Data.Entities.AppUserEntitiy", "User")
+                    b.HasOne("WebApi.Data.Entities.RefreshTokenFamilyEntity", "RefreshTokenFamily")
+                        .WithMany("AppUserRefreshTokens")
+                        .HasForeignKey("RefreshTokenFamilyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("WebApi.Data.Entities.AppUserEntity", "User")
                         .WithMany("RefreshTokens")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.Navigation("RefreshTokenFamily");
+
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("WebApi.Data.Entities.AppUserEntitiy", b =>
+            modelBuilder.Entity("WebApi.Data.Entities.AppUserEntity", b =>
                 {
                     b.Navigation("RefreshTokens");
+                });
+
+            modelBuilder.Entity("WebApi.Data.Entities.RefreshTokenFamilyEntity", b =>
+                {
+                    b.Navigation("AppUserRefreshTokens");
                 });
 #pragma warning restore 612, 618
         }

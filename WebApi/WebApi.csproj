@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <Folder Include="Data\Databases\" />
+    <Folder Include="Interfaces\" />
   </ItemGroup>
 
 </Project>

@@ -2,7 +2,7 @@
 
 namespace WebApi.Data.Entities;
 
-public class AppUserEntitiy : IdentityUser
+public class AppUserEntity : IdentityUser
 {
     public ICollection<AppUserRefreshTokenEntity> RefreshTokens { get; set; } = [];
 }

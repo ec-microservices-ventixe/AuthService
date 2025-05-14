@@ -8,10 +8,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
-    options.UseSqlServer(@"Data Source=(LocalDB)\MSSQLLocalDB;AttachDbFilename=C:\Users\Emanuel\source\repos\backends-microservices\AuthService\WebApi\Data\Databases\localAuthDb.mdf;Integrated Security=True;Connect Timeout=30");
+    options.UseSqlServer(@"Data Source=(LocalDB)\MSSQLLocalDB;AttachDbFilename=C:\Users\Emanuel\source\repos\backends-microservices\AuthService\WebApi\Data\Databases\AuthDb.mdf;Integrated Security=True;Connect Timeout=30");
 });
 
-builder.Services.AddIdentity<AppUserEntitiy, IdentityRole>()
+builder.Services.AddIdentity<AppUserEntity, IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
 

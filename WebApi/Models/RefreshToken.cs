@@ -7,4 +7,6 @@ public class RefreshToken
     public DateTime Created { get; set; } = DateTime.UtcNow;
 
     public DateTime Expires { get; set; }
+
+    public int RefreshTokenFamilyId { get; set; }
 }
