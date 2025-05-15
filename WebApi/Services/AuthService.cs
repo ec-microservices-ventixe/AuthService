@@ -62,7 +62,7 @@ public class AuthService(IAppUserRepository userRepository, IRefreshTokenReposit
         try
         {
             var roles = await _userManager.GetRolesAsync(user);
-            var token = _tokenService.GenerateRsaToken(user.Id, user.Email, roles[0]);
+            var token = await _tokenService.GenerateRsaToken(user.Id, user.Email, roles[0]);
             return token;
         }
         catch (Exception ex) 
