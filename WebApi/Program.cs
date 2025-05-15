@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using WebApi.Data.Context;
 using WebApi.Data.Entities;
+using WebApi.Interfaces;
+using WebApi.Repositories;
 using WebApi.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -26,7 +28,11 @@ builder.Services.AddCors(options =>
     });
 });
 
+builder.Services.AddScoped<IAppUserRepository, AppUserRepository>();   
+builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();   
+builder.Services.AddScoped<IRefreshTokenFamilyRepository, RefrehTokenFamilyRepository>();
 builder.Services.AddTransient<TokenService>();
+builder.Services.AddScoped<AuthService>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
