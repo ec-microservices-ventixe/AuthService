@@ -1,5 +1,7 @@
 ﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.Azure.Amqp.Framing;
 using System.Diagnostics;
+using System.Net;
 using WebApi.Data.Entities;
 using WebApi.Interfaces;
 using WebApi.Models;
@@ -32,8 +34,9 @@ public class AuthService(IRefreshTokenRepository refreshTokenRepository, IRefres
                 await _userManager.AddToRoleAsync(user, "User");
 
             var confirmEmailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+            var encodedToken = WebUtility.UrlEncode(confirmEmailToken);
 
-            var msg = new ValidateEmailMessage { Email = user.Email, Token = confirmEmailToken };
+            var msg = new ValidateEmailMessage { Email = user.Email, Token = encodedToken };
             bool msgSent = await _serviceBusService.AddToQueue("validate-email-queue", msg);
             if (!msgSent) return ServiceResult<bool>.Error("Could not add to email validation queue");
 
@@ -55,12 +58,13 @@ public class AuthService(IRefreshTokenRepository refreshTokenRepository, IRefres
             if (user is null) return ServiceResult<bool>.BadRequest("User does not exist");
 
             var confirmEmailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+            var encodedToken = WebUtility.UrlEncode(confirmEmailToken);
 
-            var msg = new ValidateEmailMessage { Email = email, Token = confirmEmailToken };
+            var msg = new ValidateEmailMessage { Email = user.Email, Token = encodedToken };
             bool msgSent = await _serviceBusService.AddToQueue("validate-email-queue", msg);
             if (!msgSent) return ServiceResult<bool>.Error("Could not add to email validation queue");
 
-            return ServiceResult<bool>.Ok("Successfully signed up, please confirm your email.");
+            return ServiceResult<bool>.Ok("Confirmation email has been resent. Please check your inbox.");
         }
         catch (Exception ex)
         {
@@ -77,7 +81,7 @@ public class AuthService(IRefreshTokenRepository refreshTokenRepository, IRefres
             if (user is null) return ServiceResult<bool>.BadRequest("User does not exist");
 
             var result = await _userManager.ConfirmEmailAsync(user, token);
-            if (!result.Succeeded) return ServiceResult<bool>.Error("Token is invalid");
+            if (!result.Succeeded) return ServiceResult<bool>.BadRequest("Token is invalid");
 
             return ServiceResult<bool>.Ok("Successfully confirmed email");
         }
