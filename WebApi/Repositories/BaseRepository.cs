@@ -64,6 +64,24 @@ public abstract class BaseRepository<TEntity>(ApplicationDbContext context) : IR
         }
     }
 
+    public virtual async Task<TEntity> UpdateAsync(TEntity updatedEntity)
+    {
+        if (updatedEntity == null) return null!;
+
+        try
+        {
+            _dbSet.Update(updatedEntity);
+            await _context.SaveChangesAsync();
+
+            return updatedEntity;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error Updating {nameof(TEntity)} entity :: {ex.Message}");
+            return null!;
+        }
+    }
+
     public virtual async Task<bool> DeleteAsync(Expression<Func<TEntity, bool>> predicate)
     {
         if (predicate == null) return false;

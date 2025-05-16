@@ -1,23 +1,18 @@
-﻿using Azure;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Identity.Client;
+﻿using Microsoft.AspNetCore.Identity;
 using System.Diagnostics;
 using WebApi.Data.Entities;
 using WebApi.Interfaces;
 using WebApi.Models;
-using WebApi.Repositories;
 
 namespace WebApi.Services;
 
-public class AuthService(IAppUserRepository userRepository, IRefreshTokenRepository refreshTokenRepository, IRefreshTokenFamilyRepository refreshTokenFamilyRepository, UserManager<AppUserEntity> userManager, TokenService tokenService)
+public class AuthService(IRefreshTokenRepository refreshTokenRepository, IRefreshTokenFamilyRepository refreshTokenFamilyRepository, UserManager<AppUserEntity> userManager, TokenService tokenService, ServiceBusService serviceBusService)
 {
-    private readonly IAppUserRepository _userRepository = userRepository;
     private readonly IRefreshTokenRepository _refreshTokenRepository = refreshTokenRepository;
     private readonly IRefreshTokenFamilyRepository _refreshTokenFamilyRepository = refreshTokenFamilyRepository;
     private readonly UserManager<AppUserEntity> _userManager = userManager;
     private readonly TokenService _tokenService = tokenService;
+    private readonly ServiceBusService _serviceBusService = serviceBusService;
 
     public async Task<ServiceResult<bool>> SignUp(SignUpModel form)
     {
@@ -36,7 +31,13 @@ public class AuthService(IAppUserRepository userRepository, IRefreshTokenReposit
             else
                 await _userManager.AddToRoleAsync(user, "User");
 
-            return ServiceResult<bool>.Ok("You Signed up successfully");
+            var confirmEmailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+
+            var msg = new ValidateEmailMessage { Email = user.Email, Token = confirmEmailToken };
+            bool msgSent = await _serviceBusService.AddToQueue("validate-email-queue", msg);
+            if (!msgSent) return ServiceResult<bool>.Error("Could not add to email validation queue");
+
+            return ServiceResult<bool>.Ok("Successfully signed up, please confirm your email.");
 
         }
         catch (Exception ex)
@@ -46,15 +47,61 @@ public class AuthService(IAppUserRepository userRepository, IRefreshTokenReposit
         }
     }
 
-    public async Task<AppUserEntity?> CheckCredentials(SignInModel form)
+    public async Task<ServiceResult<bool>> ResendConfirmationLink(string email)
+    {
+        try
+        {
+            var user = await _userManager.FindByEmailAsync(email);
+            if (user is null) return ServiceResult<bool>.BadRequest("User does not exist");
+
+            var confirmEmailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+
+            var msg = new ValidateEmailMessage { Email = email, Token = confirmEmailToken };
+            bool msgSent = await _serviceBusService.AddToQueue("validate-email-queue", msg);
+            if (!msgSent) return ServiceResult<bool>.Error("Could not add to email validation queue");
+
+            return ServiceResult<bool>.Ok("Successfully signed up, please confirm your email.");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine(ex.Message);
+            return ServiceResult<bool>.Error("Could not send email confirmation link");
+        }
+    }
+
+    public async Task<ServiceResult<bool>> ConfirmEmail(string email, string token)
+    {
+        try
+        {
+            var user = await _userManager.FindByEmailAsync(email);
+            if (user is null) return ServiceResult<bool>.BadRequest("User does not exist");
+
+            var result = await _userManager.ConfirmEmailAsync(user, token);
+            if (!result.Succeeded) return ServiceResult<bool>.Error("Token is invalid");
+
+            return ServiceResult<bool>.Ok("Successfully confirmed email");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine(ex.Message);
+            return ServiceResult<bool>.Error("Could not confirm email");
+        }
+    }
+
+
+    public async Task<ServiceResult<AppUserEntity>> CheckCredentials(SignInModel form)
     {
         var user = await _userManager.FindByEmailAsync(form.Email);
-        if (user is null) return null;
+        if (user is null) return ServiceResult<AppUserEntity>.Unauthorized("Invalid password or email");
+
+        bool emailIsConfirmed = await _userManager.IsEmailConfirmedAsync(user);
+        if (!emailIsConfirmed) return ServiceResult<AppUserEntity>.Unauthorized("You must confirm your email");
+
 
         var isPasswordValid = await _userManager.CheckPasswordAsync(user, form.Password);
-        if (!isPasswordValid) return null;
+        if (!isPasswordValid) return ServiceResult<AppUserEntity>.Unauthorized("Invalid password or email");
 
-        return user;
+        return ServiceResult<AppUserEntity>.Ok(user);
     }
 
     public async Task<string> GetGeneratedAccessToken(AppUserEntity user)
@@ -62,7 +109,7 @@ public class AuthService(IAppUserRepository userRepository, IRefreshTokenReposit
         try
         {
             var roles = await _userManager.GetRolesAsync(user);
-            var token = await _tokenService.GenerateRsaToken(user.Id, user.Email, roles[0]);
+            var token = await _tokenService.GenerateRsaToken(user.Id, user.Email!, roles[0]);
             return token;
         }
         catch (Exception ex) 
@@ -97,8 +144,6 @@ public class AuthService(IAppUserRepository userRepository, IRefreshTokenReposit
         try
         {
             var foundToken = await _refreshTokenRepository.GetAsync(x => x.Token == oldToken);
-            var user = await _userManager.FindByIdAsync(foundToken.UserId);
-            if (user is null) return ServiceResult<(RefreshToken, AppUserEntity)>.NotFound("User not found");
 
             if (foundToken == null || foundToken.Expires < DateTime.UtcNow || foundToken.IsLocked)
                 return ServiceResult<(RefreshToken, AppUserEntity)>.Error("The token is not valid");
@@ -110,7 +155,7 @@ public class AuthService(IAppUserRepository userRepository, IRefreshTokenReposit
             }
 
             foundToken.HasRotated = true;
-            await _refreshTokenRepository.UpdateAsync(x => x.Id == foundToken.Id, foundToken);
+            await _refreshTokenRepository.UpdateAsync(foundToken);
 
             
             var newToken = _tokenService.GenerateRefreshToken(foundToken.RefreshTokenFamilyId);
@@ -123,7 +168,7 @@ public class AuthService(IAppUserRepository userRepository, IRefreshTokenReposit
                 RefreshTokenFamilyId = foundToken.RefreshTokenFamilyId
             });
 
-            return ServiceResult<(RefreshToken, AppUserEntity)>.Ok((newToken, user));
+            return ServiceResult<(RefreshToken, AppUserEntity)>.Ok((newToken, foundToken.User));
         }
         catch (Exception ex)
         {
@@ -153,10 +198,10 @@ public class AuthService(IAppUserRepository userRepository, IRefreshTokenReposit
     {
         try
         {
-            var familyId = (await _refreshTokenRepository.GetAsync(x => x.Token == refreshToken)).RefreshTokenFamilyId;
-            await _refreshTokenFamilyRepository.DeleteAsync(x => x.Id == familyId);
-            var refreshTokens = await _refreshTokenRepository.GetAllAsync();
-            var refreshtokensToRemove = refreshTokens.Where(x => x.RefreshTokenFamilyId == familyId);
+            var foundToken = await _refreshTokenRepository.GetAsync(x => x.Token == refreshToken);
+            await _refreshTokenFamilyRepository.DeleteAsync(foundToken.RefreshTokenFamily);
+
+            var refreshtokensToRemove = (await _refreshTokenRepository.GetAllAsync()).Where(x => x.RefreshTokenFamilyId == foundToken.RefreshTokenFamilyId);
 
             foreach (var token in refreshtokensToRemove)
             {

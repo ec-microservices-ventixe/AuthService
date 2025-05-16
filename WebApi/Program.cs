@@ -1,3 +1,4 @@
+using Azure.Messaging.ServiceBus;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using WebApi.Data.Context;
@@ -10,7 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
-    options.UseSqlServer(@"Data Source=(LocalDB)\MSSQLLocalDB;AttachDbFilename=C:\Users\Emanuel\source\repos\backends-microservices\AuthService\WebApi\Data\Databases\AuthDb.mdf;Integrated Security=True;Connect Timeout=30");
+    options.UseSqlServer(builder.Configuration.GetConnectionString("SqlConnection"));
 });
 
 builder.Services.AddIdentity<AppUserEntity, IdentityRole>()
@@ -27,6 +28,9 @@ builder.Services.AddCors(options =>
               .WithExposedHeaders("Bearer-Token");
     });
 });
+
+builder.Services.AddSingleton<ServiceBusClient>(new ServiceBusClient(builder.Configuration["ASB:ConnectionString"]));
+builder.Services.AddScoped<ServiceBusService>();
 
 builder.Services.AddScoped<IAppUserRepository, AppUserRepository>();   
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();   

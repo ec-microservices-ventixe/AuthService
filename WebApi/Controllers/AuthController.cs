@@ -1,8 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
-using WebApi.Data.Context;
-using WebApi.Data.Entities;
 using WebApi.Models;
 using WebApi.Services;
 
@@ -14,7 +11,7 @@ public class AuthController(AuthService authService) : ControllerBase
 {
     private readonly AuthService _authService = authService;
 
-    [HttpPost("/SignUp")]
+    [HttpPost("/signup")]
     public async Task<IActionResult> SignUp([FromBody] SignUpModel form)
     {
         if(!ModelState.IsValid) return BadRequest(ModelState);
@@ -33,14 +30,55 @@ public class AuthController(AuthService authService) : ControllerBase
             return StatusCode(500, "Something went wrong");
         }
     }
-    [HttpPost("/SignIn")]
+    [HttpPost("/confirm-email")]
+    public async Task<IActionResult> SignUp([FromQuery] string email, [FromQuery] string token)
+    {
+        try
+        {
+            var result = await _authService.ConfirmEmail(email, token);
+            if (result.Success == true)
+            {
+                return Ok("You confirmed your email");
+            }
+            return StatusCode(result.StatusCode, result.ErrorMessage);
+
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine(ex.Message);
+            return StatusCode(500, "Something went wrong");
+        }
+    }
+
+    [HttpPost("/resend-email-confirmation")]
+    public async Task<IActionResult> ResendEmailConfirmation([FromQuery] string email)
+    {
+        try
+        {
+            var result = await _authService.ResendConfirmationLink(email);
+            if (result.Success == true)
+            {
+                return Ok("Confirmation link is sent to your email.");
+            }
+            return StatusCode(result.StatusCode, result.ErrorMessage);
+
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine(ex.Message);
+            return StatusCode(500, "Something went wrong");
+        }
+    }
+
+    [HttpPost("/signin")]
     public async Task<IActionResult> SignIn([FromBody] SignInModel form)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
         try
         {
-            var user = await _authService.CheckCredentials(form);
-            if (user is null) return Unauthorized("Invalid Email or password");
+            var CheckCredentialsResult = await _authService.CheckCredentials(form);
+            if (CheckCredentialsResult.Data is null) return StatusCode(CheckCredentialsResult.StatusCode, CheckCredentialsResult.ErrorMessage!);
+            var user = CheckCredentialsResult.Data;
 
             var RefreshTokenResult = await _authService.GetGeneratedRefreshToken(user.Id);
             if(RefreshTokenResult.Data is null)
@@ -74,7 +112,7 @@ public class AuthController(AuthService authService) : ControllerBase
         return Ok("Logged out");
     }
 
-    [HttpPost("/refreshToken")]
+    [HttpPost("/refresh-token")]
     public async Task<IActionResult> RefreshToken()
     {
         var refreshToken = Request.Cookies["refreshToken"];
