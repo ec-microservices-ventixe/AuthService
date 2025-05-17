@@ -81,8 +81,8 @@ public class AuthService(IRefreshTokenRepository refreshTokenRepository, IRefres
         {
             var user = await _userManager.FindByEmailAsync(email);
             if (user is null) return ServiceResult<bool>.BadRequest("User does not exist");
-
-            var result = await _userManager.ConfirmEmailAsync(user, token);
+            var decodedToken = WebUtility.UrlDecode(token);
+            var result = await _userManager.ConfirmEmailAsync(user, decodedToken);
             if (!result.Succeeded) return ServiceResult<bool>.BadRequest("Token is invalid");
 
             return ServiceResult<bool>.Ok("Successfully confirmed email");
