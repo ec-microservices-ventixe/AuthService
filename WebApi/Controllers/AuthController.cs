@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Amqp.Framing;
 using System.Diagnostics;
 using WebApi.Models;
 using WebApi.Services;
@@ -7,9 +8,10 @@ namespace WebApi.Controllers;
 
 [ApiController]
 [Route("[controller]")]
-public class AuthController(AuthService authService) : ControllerBase
+public class AuthController(AuthService authService, TokenService tokenService) : ControllerBase
 {
     private readonly AuthService _authService = authService;
+    private readonly TokenService _tokenService = tokenService;
 
     [HttpPost("/signup")]
     public async Task<IActionResult> SignUp([FromBody] SignUpModel form)
@@ -132,6 +134,17 @@ public class AuthController(AuthService authService) : ControllerBase
         Response.Headers.Append("Bearer-Token", token);
 
         return Ok("Token refreshed successfully");
+    }
+
+    [HttpGet("/.well-known/jwks.json")]
+    public async Task<IActionResult> Jwks()
+    {
+        string jwks = await _tokenService.GetJwks();
+        if (jwks is not null)
+        {
+            return Ok(jwks);
+        }
+        return StatusCode(500, "\"Could not get jwk");
     }
 
     private bool SetRefreshTokenCookie(RefreshToken newRefreshToken)
