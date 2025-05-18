@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Amqp.Framing;
 using System.Diagnostics;
 using System.Net;
+using System.Text;
 using System.Web;
 using WebApi.Data.Entities;
 using WebApi.Interfaces;
@@ -37,7 +38,8 @@ public class AuthService(IRefreshTokenRepository refreshTokenRepository, IRefres
                 await _userManager.AddToRoleAsync(user, "User");
 
             var confirmEmailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-            var encodedToken = HttpUtility.UrlEncode(confirmEmailToken);
+            var tokenBytes = Encoding.UTF8.GetBytes(confirmEmailToken);
+            var encodedToken = Convert.ToBase64String(tokenBytes);
 
             var msg = new ValidateEmailMessage { Email = user.Email, Token = encodedToken };
             bool msgSent = await _serviceBusService.AddToQueue("validate-email-queue", msg);
@@ -61,7 +63,8 @@ public class AuthService(IRefreshTokenRepository refreshTokenRepository, IRefres
             if (user is null) return ServiceResult<bool>.BadRequest("User does not exist");
 
             var confirmEmailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-            var encodedToken = HttpUtility.UrlEncode(confirmEmailToken);
+            var tokenBytes = Encoding.UTF8.GetBytes(confirmEmailToken);
+            var encodedToken = Convert.ToBase64String(tokenBytes);
 
             var msg = new ValidateEmailMessage { Email = user.Email, Token = encodedToken };
             bool msgSent = await _serviceBusService.AddToQueue("validate-email-queue", msg);
@@ -82,7 +85,8 @@ public class AuthService(IRefreshTokenRepository refreshTokenRepository, IRefres
         {
             var user = await _userManager.FindByEmailAsync(email);
             if (user is null) return ServiceResult<bool>.BadRequest("User does not exist");
-            var decodedToken = HttpUtility.UrlDecode(token);
+            var tokenBytes = Convert.FromBase64String(token);
+            var decodedToken = Encoding.UTF8.GetString(tokenBytes);
             var result = await _userManager.ConfirmEmailAsync(user, decodedToken);
             if (!result.Succeeded) return ServiceResult<bool>.BadRequest("Token is invalid");
 
