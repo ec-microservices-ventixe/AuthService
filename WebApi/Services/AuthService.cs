@@ -66,7 +66,7 @@ public class AuthService(IRefreshTokenRepository refreshTokenRepository, IRefres
             var tokenBytes = Encoding.UTF8.GetBytes(confirmEmailToken);
             var encodedToken = Convert.ToBase64String(tokenBytes);
 
-            var msg = new ValidateEmailMessage { Email = user.Email, Token = encodedToken };
+            var msg = new ValidateEmailMessage { Email = user.Email!, Token = encodedToken };
             bool msgSent = await _serviceBusService.AddToQueue("validate-email-queue", msg);
             if (!msgSent) return ServiceResult<bool>.Error("Could not add to email validation queue");
 

@@ -11,60 +11,69 @@ using Azure.Security.KeyVault.Keys.Cryptography;
 using System.Text;
 using System.Text.Json;
 using JsonWebKey = Azure.Security.KeyVault.Keys.JsonWebKey;
+using System.Data;
+using System;
 
 namespace WebApi.Services;
 
 public class TokenService(IConfiguration config)
 {
     private readonly IConfiguration _config = config;
-
     public async Task<string> GenerateAccessToken(string userId, string email, string role)
     {
         var uri = _config["AzureKeyVault:KeyVaultUri"];
         var keyName = _config["AzureKeyVault:RSAKey"];
-
-        var credential = new DefaultAzureCredential();
-        var client = new KeyClient(new Uri(uri!), credential);
-        var key = await client.GetKeyAsync(keyName);
-        var cryptoClient = new CryptographyClient(key.Value.Id, credential);
         var issuer = _config["Jwt:Issuer"];
         var audience = _config["Jwt:Audience"];
-        var claims = new List<Claim>
+        try
         {
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new(JwtRegisteredClaimNames.Sub, userId),
-            new(JwtRegisteredClaimNames.Email, email),
-            new(ClaimTypes.Role, role)
-        };
-        var header = new JwtHeader
+            var credential = new DefaultAzureCredential();
+            var client = new KeyClient(new Uri(uri!), credential);
+            var key = await client.GetKeyAsync(keyName);
+            var cryptoClient = new CryptographyClient(key.Value.Id, credential);
+            
+            var claims = new List<Claim>
+            {
+                new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                new(JwtRegisteredClaimNames.Sub, userId),
+                new(JwtRegisteredClaimNames.Email, email),
+                new(ClaimTypes.Role, role)
+            };
+            var header = new JwtHeader
+            {
+                { "alg", "RS256" },
+                { "typ", "JWT" },
+                { "kid", cryptoClient.KeyId }
+            };
+
+            var payload = new JwtPayload(
+                issuer: issuer,
+                audience: audience,
+                claims: claims,
+                notBefore: DateTime.UtcNow,
+                expires: DateTime.UtcNow.AddMinutes(60),
+                issuedAt: DateTime.UtcNow
+            );
+
+            var handler = new JwtSecurityTokenHandler();
+            var token = new JwtSecurityToken(header, payload);
+
+            string unsignedJwt = handler.WriteToken(token);
+            unsignedJwt = unsignedJwt.Substring(0, unsignedJwt.LastIndexOf("."));
+
+            using var sha256 = SHA256.Create();
+            var digest = sha256.ComputeHash(Encoding.UTF8.GetBytes(unsignedJwt));
+
+            var signResult = await cryptoClient.SignAsync(SignatureAlgorithm.RS256, digest);
+            var signature = Base64UrlEncoder.Encode(signResult.Signature);
+
+            return $"{unsignedJwt}.{signature}";
+
+        } catch ( Exception ex )
         {
-            { "alg", "RS256" },
-            { "typ", "JWT" },
-            { "kid", cryptoClient.KeyId }
-        };
-
-        var payload = new JwtPayload(
-            issuer: issuer,
-            audience: audience,
-            claims: claims,
-            notBefore: DateTime.UtcNow,
-            expires: DateTime.UtcNow.AddMinutes(60),
-            issuedAt: DateTime.UtcNow
-        );
-
-        var handler = new JwtSecurityTokenHandler();
-        var token = new JwtSecurityToken(header, payload);
-
-        string unsignedJwt = handler.WriteToken(token);
-        unsignedJwt = unsignedJwt.Substring(0, unsignedJwt.LastIndexOf("."));
-
-        using var sha256 = SHA256.Create();
-        var digest = sha256.ComputeHash(Encoding.UTF8.GetBytes(unsignedJwt));
-
-        var signResult = await cryptoClient.SignAsync(SignatureAlgorithm.RS256, digest);
-        var signature = Base64UrlEncoder.Encode(signResult.Signature);
-
-        return $"{unsignedJwt}.{signature}";
+            Debug.WriteLine( ex );
+            return "";
+        }
     }
     public RefreshToken GenerateRefreshToken(int familyId)
     {
