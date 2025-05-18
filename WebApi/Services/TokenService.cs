@@ -10,6 +10,7 @@ using WebApi.Models;
 using Azure.Security.KeyVault.Keys.Cryptography;
 using System.Text;
 using System.Text.Json;
+using JsonWebKey = Azure.Security.KeyVault.Keys.JsonWebKey;
 
 namespace WebApi.Services;
 
@@ -17,7 +18,7 @@ public class TokenService(IConfiguration config)
 {
     private readonly IConfiguration _config = config;
 
-    public async Task<string> GenerateRsaToken(string userId, string email, string role)
+    public async Task<string> GenerateAccessToken(string userId, string email, string role)
     {
         var uri = _config["AzureKeyVault:KeyVaultUri"];
         var keyName = _config["AzureKeyVault:RSAKey"];
@@ -65,55 +66,6 @@ public class TokenService(IConfiguration config)
 
         return $"{unsignedJwt}.{signature}";
     }
-    public async Task<string> GenerateRsaTokenFromSecrets(string userId, string email, string role)
-    {
-        var uri = _config["AzureKeyVault:KeyVaultUri"];
-        var secretName = _config["AzureKeyVault:RSAPrivateKey"];
-        var client = new SecretClient(new Uri(uri!), new DefaultAzureCredential());
-
-        try
-        {
-            KeyVaultSecret secret = await client.GetSecretAsync(secretName);
-            string privateKeyPem = secret.Value;
-            if (privateKeyPem is null) return "";
-
-            privateKeyPem = privateKeyPem.Replace("-----BEGIN PRIVATE KEY-----", "");
-            privateKeyPem = privateKeyPem.Replace("-----END PRIVATE KEY-----", "");
-
-            byte[] privateKeyRaw = Convert.FromBase64String(privateKeyPem);
-
-            RSA rsa = RSA.Create();
-            rsa.ImportPkcs8PrivateKey(new ReadOnlySpan<byte>(privateKeyRaw), out _);
-            RsaSecurityKey rsaSecurityKey = new(rsa);
-
-            var issuer = _config["Jwt:Issuer"];
-            var audience = _config["Jwt:Audience"];
-            var claims = new List<Claim>
-            {
-                new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                new(JwtRegisteredClaimNames.Sub, userId),
-                new(JwtRegisteredClaimNames.Email, email),
-                new(ClaimTypes.Role, role)
-            };
-            var tokenDescriptor = new SecurityTokenDescriptor
-            {
-                Subject = new ClaimsIdentity(claims),
-                Expires = DateTime.UtcNow.AddMinutes(60),
-                Issuer = issuer,
-                Audience = audience,
-                SigningCredentials = new SigningCredentials(rsaSecurityKey, SecurityAlgorithms.RsaSha256)
-            };
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            return tokenHandler.WriteToken(token);
-
-
-        } catch (Exception ex) 
-        {
-            Debug.WriteLine(ex.Message);
-            return "null";
-        }
-    }
     public RefreshToken GenerateRefreshToken(int familyId)
     {
         return new RefreshToken
@@ -133,7 +85,7 @@ public class TokenService(IConfiguration config)
         var client = new KeyClient(new Uri(uri!), credential);
         var key = await client.GetKeyAsync(keyName);
 
-        Azure.Security.KeyVault.Keys.JsonWebKey jwk = key.Value.Key;
+        JsonWebKey jwk = key.Value.Key;
 
         var jwkObj = new
         {

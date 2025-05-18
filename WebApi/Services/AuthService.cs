@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Amqp.Framing;
 using System.Diagnostics;
 using System.Net;
+using System.Web;
 using WebApi.Data.Entities;
 using WebApi.Interfaces;
 using WebApi.Models;
@@ -36,7 +37,7 @@ public class AuthService(IRefreshTokenRepository refreshTokenRepository, IRefres
                 await _userManager.AddToRoleAsync(user, "User");
 
             var confirmEmailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-            var encodedToken = WebUtility.UrlEncode(confirmEmailToken);
+            var encodedToken = HttpUtility.UrlEncode(confirmEmailToken);
 
             var msg = new ValidateEmailMessage { Email = user.Email, Token = encodedToken };
             bool msgSent = await _serviceBusService.AddToQueue("validate-email-queue", msg);
@@ -60,7 +61,7 @@ public class AuthService(IRefreshTokenRepository refreshTokenRepository, IRefres
             if (user is null) return ServiceResult<bool>.BadRequest("User does not exist");
 
             var confirmEmailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-            var encodedToken = WebUtility.UrlEncode(confirmEmailToken);
+            var encodedToken = HttpUtility.UrlEncode(confirmEmailToken);
 
             var msg = new ValidateEmailMessage { Email = user.Email, Token = encodedToken };
             bool msgSent = await _serviceBusService.AddToQueue("validate-email-queue", msg);
@@ -81,7 +82,7 @@ public class AuthService(IRefreshTokenRepository refreshTokenRepository, IRefres
         {
             var user = await _userManager.FindByEmailAsync(email);
             if (user is null) return ServiceResult<bool>.BadRequest("User does not exist");
-            var decodedToken = WebUtility.UrlDecode(token);
+            var decodedToken = HttpUtility.UrlDecode(token);
             var result = await _userManager.ConfirmEmailAsync(user, decodedToken);
             if (!result.Succeeded) return ServiceResult<bool>.BadRequest("Token is invalid");
 
@@ -115,7 +116,7 @@ public class AuthService(IRefreshTokenRepository refreshTokenRepository, IRefres
         try
         {
             var roles = await _userManager.GetRolesAsync(user);
-            var token = await _tokenService.GenerateRsaToken(user.Id, user.Email!, roles[0]);
+            var token = await _tokenService.GenerateAccessToken(user.Id, user.Email!, roles[0]);
             return token;
         }
         catch (Exception ex) 
