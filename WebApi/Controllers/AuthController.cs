@@ -92,7 +92,7 @@ public class AuthController(AuthService authService, TokenService tokenService) 
                 return StatusCode(500, "Failed To create access token");
             Response.Headers.Append("Bearer-Token", token);
 
-            return Ok("You Signed in successfully");
+            return Ok(new { success = true, message = "You Signed in successfully" });
         }
         catch (Exception ex)
         {

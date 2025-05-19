@@ -1,5 +1,4 @@
 ﻿using Azure.Identity;
-using Azure.Security.KeyVault.Secrets;
 using Azure.Security.KeyVault.Keys;
 using Microsoft.IdentityModel.Tokens;
 using System.Diagnostics;
@@ -11,8 +10,7 @@ using Azure.Security.KeyVault.Keys.Cryptography;
 using System.Text;
 using System.Text.Json;
 using JsonWebKey = Azure.Security.KeyVault.Keys.JsonWebKey;
-using System.Data;
-using System;
+
 
 namespace WebApi.Services;
 
