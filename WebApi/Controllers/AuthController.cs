@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Amqp.Framing;
+using System.ComponentModel;
 using System.Diagnostics;
 using WebApi.Models;
 using WebApi.Services;
@@ -22,7 +23,7 @@ public class AuthController(AuthService authService, TokenService tokenService) 
             var result = await _authService.SignUp(form);
             if(result.Success == true)
             {
-                return Ok("You succesfully signed up");
+                return Ok(new {success = true, message = "You have successfully registerd your account, Check your email inbox we have sent you a link to confirm your account"});
             }
             return StatusCode(result.StatusCode, result.ErrorMessage);
 
@@ -33,14 +34,14 @@ public class AuthController(AuthService authService, TokenService tokenService) 
         }
     }
     [HttpPost("/confirm-email")]
-    public async Task<IActionResult> SignUp([FromQuery] string email, [FromQuery] string token)
+    public async Task<IActionResult> ConfirmEmail([FromQuery] string email, [FromQuery] string token)
     {
         try
         {
             var result = await _authService.ConfirmEmail(email, token);
             if (result.Success == true)
             {
-                return Ok("You confirmed your email");
+                return Ok(new {success = true, message = "Ýour email is no confirmed and"});
             }
             return StatusCode(result.StatusCode, result.ErrorMessage);
 
@@ -60,7 +61,7 @@ public class AuthController(AuthService authService, TokenService tokenService) 
             var result = await _authService.ResendConfirmationLink(email);
             if (result.Success == true)
             {
-                return Ok("Confirmation link is sent to your email.");
+                return Ok("Confirmation link is sent to your email. Please check your inbox");
             }
             return StatusCode(result.StatusCode, result.ErrorMessage);
 
@@ -111,7 +112,7 @@ public class AuthController(AuthService authService, TokenService tokenService) 
         await _authService.RemoveRefreshTokenFamilyByToken(refreshToken);
 
         Response.Cookies.Delete("refreshToken");
-        return Ok("Logged out");
+        return Ok();
     }
 
     [HttpPost("/refresh-token")]
@@ -119,12 +120,12 @@ public class AuthController(AuthService authService, TokenService tokenService) 
     {
         var refreshToken = Request.Cookies["refreshToken"];
         if (string.IsNullOrEmpty(refreshToken))
-            return Unauthorized("Refresh token is missing.");
+            return Unauthorized(new { success = false, message = "Refresh token is missing." });
 
         var newRefreshTokenResult = await _authService.RotateRefreshToken(refreshToken);
         var ( newToken, user ) = newRefreshTokenResult.Data.ToTuple();
         if (!newRefreshTokenResult.Success || newToken is null)
-            return Unauthorized("Access Denied");
+            return Unauthorized(new { success = false, message = "Access Denied" });
         SetRefreshTokenCookie(newToken);
 
         var token = await _authService.GetGeneratedAccessToken(user);
@@ -133,7 +134,41 @@ public class AuthController(AuthService authService, TokenService tokenService) 
 
         Response.Headers.Append("Bearer-Token", token);
 
-        return Ok("Token refreshed successfully");
+        return Ok();
+    }
+
+    [HttpPost("/forgot-password")]
+    public async Task<IActionResult> ForgotPassword([FromQuery] string email)
+    {
+        try
+        {
+            var result = await _authService.SendForgotPasswordLink(email);
+            if (!result.Success) return StatusCode(result.StatusCode, $"{result.ErrorMessage}");
+            return Ok(new { success = true, message = "A password reset link is sent to your email, please check your inbox" });
+
+        } catch(Exception ex)
+        {
+            Debug.WriteLine(ex.Message);
+            return StatusCode(500, "Something went wrong");
+        }
+    }
+
+    [HttpPost("/reset-password")]
+    public async Task<IActionResult> ResetPassword ([FromBody] PasswordResetModel form, [FromQuery] string email, [FromQuery] string token)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        try
+        {
+            var result = await _authService.ResetPassword(email, token, form.Password);
+            if (!result.Success) return StatusCode(result.StatusCode, $"{result.ErrorMessage}");
+            return Ok(new { success = true, message = "A password reset link is sent to your email, please check your inbox" });
+
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine(ex.Message);
+            return StatusCode(500, "Something went wrong");
+        }
     }
 
     [HttpGet("/.well-known/jwks.json")]
@@ -144,7 +179,7 @@ public class AuthController(AuthService authService, TokenService tokenService) 
         {
             return Ok(jwks);
         }
-        return StatusCode(500, "\"Could not get jwk");
+        return StatusCode(500, "Could not get keys");
     }
 
     private bool SetRefreshTokenCookie(RefreshToken newRefreshToken)

@@ -99,6 +99,51 @@ public class AuthService(IRefreshTokenRepository refreshTokenRepository, IRefres
         }
     }
 
+    public async Task<ServiceResult<bool>> SendForgotPasswordLink(string email)
+    {
+        try
+        {
+            var user = await _userManager.FindByEmailAsync(email);
+            if (user is null) return ServiceResult<bool>.BadRequest("User does not exist");
+
+            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var tokenBytes = Encoding.UTF8.GetBytes(token);
+            var encodedToken = Convert.ToBase64String(tokenBytes);
+
+            var msg = new ValidateEmailMessage { Email = user.Email!, Token = encodedToken };
+            bool msgSent = await _serviceBusService.AddToQueue("forgot-password-queue", msg);
+            if (!msgSent) return ServiceResult<bool>.Error("Could not add to forgot password queue");
+
+            return ServiceResult<bool>.Ok("Confirmation email has been resent. Please check your inbox.");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine(ex.Message);
+            return ServiceResult<bool>.Error("Could not send email confirmation link");
+        }
+    }
+
+    public async Task<ServiceResult<bool>> ResetPassword(string email, string password, string token)
+    {
+        try
+        {
+            var user = await _userManager.FindByEmailAsync(email);
+            if (user is null) return ServiceResult<bool>.BadRequest("User does not exist");
+
+            var tokenBytes = Convert.FromBase64String(token);
+            var decodedToken = Encoding.UTF8.GetString(tokenBytes);
+
+            var result = await _userManager.ResetPasswordAsync(user, decodedToken, password);
+            if (!result.Succeeded) return ServiceResult<bool>.BadRequest("Token is invalid");
+
+            return ServiceResult<bool>.Ok("Successfully confirmed email");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine(ex.Message);
+            return ServiceResult<bool>.Error("Could not confirm email");
+        }
+    }
 
     public async Task<ServiceResult<AppUserEntity>> CheckCredentials(SignInModel form)
     {

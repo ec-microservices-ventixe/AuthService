@@ -20,9 +20,9 @@ builder.Services.AddIdentity<AppUserEntity, IdentityRole>()
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("CorsPolicy", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.WithOrigins(builder.Configuration["Cors:CorsUrls"] ?? "https://ashy-river-06da9c403.6.azurestaticapps.net")
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials()
@@ -51,7 +51,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.UseCors("AllowAll");
+app.UseCors("CorsPolicy");
 app.UseAuthentication();
 app.UseAuthorization();
 
